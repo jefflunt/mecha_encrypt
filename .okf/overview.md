@@ -42,7 +42,7 @@ sources:
 | Path | Role |
 |------|------|
 | `lib/mecha_encrypt.rb` | Top-level `MechaEncrypt` singleton (`configuration`, `configure`, `registry`, `reload!`, `reset_configuration!`).[^entrypoint] |
-| `lib/mecha_encrypt/version.rb` | Defines `MechaEncrypt::VERSION` (`"0.1.0"`). |
+| `lib/mecha_encrypt/version.rb` | Defines `MechaEncrypt::VERSION` (`"0.1.1"`). |
 | `lib/mecha_encrypt/errors.rb` | Defines `MechaEncrypt::Error` and `MechaEncrypt::ConfigurationError`. |
 | `lib/mecha_encrypt/configuration.rb` | Defines [Central Encryption Registry](/architecture/registry.md) runtime settings (`MechaEncrypt::Configuration`). |
 | `lib/mecha_encrypt/registry.rb` | Parses and validates `config/mecha_encrypt.yml` (`MechaEncrypt::Registry`). |
