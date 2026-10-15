@@ -1,0 +1,51 @@
+# Built gem packages
+*.gem
+/pkg/
+
+# Bundler & Ruby version manager artifacts
+/.bundle/
+/vendor/bundle/
+.config
+.ruby-version
+.ruby-gemset
+.rbenv-gemsets
+.rbenv-vars
+
+# Ruby / JRuby / Rubinius bytecode & caches
+*.rbc
+*.sassc
+.byebug_history
+.irb_history
+
+# Test coverage & reports
+/coverage/
+/test/reports/
+
+# Documentation artifacts
+/doc/
+/.yardoc/
+/_yardoc/
+
+# Temporary and log files
+/tmp/
+/log/
+*.log
+*.tmp
+*.pid
+
+# Local environment files
+.env
+.env.*
+
+# macOS & OS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editor & IDE directories/swap files
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
