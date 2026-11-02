@@ -4,6 +4,7 @@ require_relative "mecha_encrypt/version"
 require_relative "mecha_encrypt/errors"
 require_relative "mecha_encrypt/configuration"
 require_relative "mecha_encrypt/registry"
+require_relative "mecha_encrypt/model"
 require_relative "mecha_encrypt/auditor/static"
 require_relative "mecha_encrypt/auditor/prober"
 require_relative "mecha_encrypt/railtie" if defined?(Rails::Railtie)

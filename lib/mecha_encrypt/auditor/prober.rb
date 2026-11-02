@@ -34,12 +34,13 @@ module MechaEncrypt
       def probe_index_safety
         index_failures = []
         conn = db_connection
+        enc_cols = effective_encrypted_columns
 
-        @registry.tables.each do |table_name, cols|
+        enc_cols.group_by { |e| e[:table] }.each do |table_name, cols|
           next unless conn.table_exists?(table_name)
 
           indexes = conn.indexes(table_name)
-          cols.each_value do |entry|
+          cols.each do |entry|
             next unless entry[:encrypted] && !entry[:deterministic]
 
             col_name = entry[:column]
@@ -63,7 +64,7 @@ module MechaEncrypt
         end
 
         Result.new(
-          probed_columns_count: @registry.encrypted_columns.size,
+          probed_columns_count: enc_cols.size,
           probed_records_count: 0,
           cipher_failures: [],
           index_failures: index_failures
@@ -77,7 +78,7 @@ module MechaEncrypt
         models_by_table = discover_models_by_table
         probed_count = 0
 
-        @registry.encrypted_columns.each do |entry|
+        effective_encrypted_columns(models_by_table).each do |entry|
           res = probe_single_column_type(entry, models_by_table: models_by_table)
           probed_count += res.probed_columns_count
           cipher_failures.concat(res.cipher_failures)
@@ -290,6 +291,37 @@ module MechaEncrypt
           models[klass.table_name] ||= klass
         end
         models
+      end
+
+      def effective_encrypted_columns(models_by_table = nil)
+        models_map = models_by_table || discover_models_by_table
+        by_key = {}
+
+        @registry.encrypted_columns.each do |entry|
+          by_key[[entry[:table], entry[:column]]] = entry
+        end
+
+        models_map.each do |table_name, model_klass|
+          next unless model_klass.respond_to?(:encrypted_attributes) && model_klass.encrypted_attributes.present?
+
+          model_klass.encrypted_attributes.map(&:to_s).each do |col_name|
+            key = [table_name.to_s, col_name]
+            next if by_key.key?(key)
+
+            attr_type = model_klass.respond_to?(:type_for_attribute) ? model_klass.type_for_attribute(col_name) : nil
+            is_det = attr_type.respond_to?(:deterministic?) ? !!attr_type.deterministic? : false
+
+            by_key[key] = {
+              table: table_name.to_s,
+              column: col_name,
+              encrypted: true,
+              deterministic: is_det,
+              comment: "Declared via ActiveRecord::Encryption on #{model_klass.name}"
+            }
+          end
+        end
+
+        by_key.values
       end
 
       def normalize_records_map(records_hash)
