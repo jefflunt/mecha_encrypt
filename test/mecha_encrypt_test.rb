@@ -159,4 +159,94 @@ class MechaEncryptTest < Minitest::Test
     assert_equal 1, idx_result.index_failures.size
     assert_equal "secret_token", idx_result.index_failures.first.column
   end
+
+  def test_model_level_dsl_and_active_record_encryption_reflection_without_yaml_duplication
+    fake_type_det = Struct.new(:det) do
+      def deterministic?
+        det
+      end
+    end
+
+    base_klass = Class.new do
+      include MechaEncrypt::Model
+
+      class << self
+        attr_accessor :table_name, :encrypted_attributes, :deterministic_columns
+
+        def abstract_class?
+          false
+        end
+
+        def descendants
+          @descendants || []
+        end
+
+        def register_descendant(sub)
+          @descendants ||= []
+          @descendants << sub
+        end
+
+        def type_for_attribute(col_name)
+          det = Array(deterministic_columns).map(&:to_s).include?(col_name.to_s)
+          Struct.new(:det) { def deterministic?; det; end }.new(det)
+        end
+      end
+    end
+
+    account_model = Class.new(base_klass) do
+      def self.name
+        "EmailAccount"
+      end
+    end
+    account_model.table_name = "email_accounts"
+    account_model.encrypted_attributes = [:email_address, :oauth_token]
+    account_model.deterministic_columns = [:email_address]
+    account_model.unencrypted_attributes :id, :created_at, reason: "Primary key UUID and standard record timestamp"
+    base_klass.register_descendant(account_model)
+
+    Object.const_set(:FakeAppRecordForDslTest, base_klass)
+
+    begin
+      MechaEncrypt.configure do |config|
+        config.config_path = { "tables" => {} }
+        config.base_model_class = "FakeAppRecordForDslTest"
+      end
+
+      conn = FakeConnection.new(
+        "email_accounts" => [
+          FakeColumn.new("id", "uuid"),
+          FakeColumn.new("email_address", "varchar"),
+          FakeColumn.new("oauth_token", "text"),
+          FakeColumn.new("created_at", "datetime")
+        ]
+      )
+
+      auditor = MechaEncrypt::Auditor::Static.new(MechaEncrypt.registry, MechaEncrypt.configuration, connection: conn)
+      result = auditor.audit
+
+      assert result.success?, "Expected model-level DSL audit to pass, got errors: #{result.to_h.inspect}"
+
+      col_audits = result.all_column_audits.each_with_object({}) { |c, h| h[c.column] = c }
+      assert_equal :unencrypted, col_audits["id"].status
+      assert_equal :deterministic, col_audits["email_address"].status
+      assert_equal :encrypted, col_audits["oauth_token"].status
+      assert_equal :unencrypted, col_audits["created_at"].status
+
+      # Invalid placeholder reason in unencrypted_attributes fails closed
+      account_model.unencrypted_attribute :created_at, reason: "todo"
+      bad_result = auditor.audit
+      refute bad_result.success?
+      assert_equal 1, bad_result.invalid_comments.size
+      assert_includes bad_result.invalid_comments.first, "email_accounts.created_at"
+
+      # Dead column in unencrypted_attributes is flagged
+      account_model.reset_mecha_unencrypted_attributes!
+      account_model.unencrypted_attributes :id, :created_at, :stale_col, reason: "Primary key UUID and standard record timestamp"
+      dead_result = auditor.audit
+      refute dead_result.success?
+      assert_includes dead_result.dead_columns, "email_accounts.stale_col"
+    ensure
+      Object.send(:remove_const, :FakeAppRecordForDslTest) if Object.const_defined?(:FakeAppRecordForDslTest)
+    end
+  end
 end

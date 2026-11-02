@@ -122,14 +122,20 @@ module MechaEncrypt
           end
 
           model_klass = models_by_table[table_name]
-          table_registered = @registry.table_registered?(table_name)
+          model_unencrypted = if model_klass && model_klass.respond_to?(:mecha_unencrypted_attributes)
+            model_klass.mecha_unencrypted_attributes
+          else
+            {}
+          end
+          model_has_encrypted = model_klass && model_klass.respond_to?(:encrypted_attributes) && model_klass.encrypted_attributes.present?
+          table_registered = @registry.table_registered?(table_name) || model_has_encrypted || model_unencrypted.any?
           unmapped_tables << table_name unless table_registered
 
           db_cols = conn.columns(table_name).sort_by(&:name)
           db_col_names = Set.new(db_cols.map(&:name))
 
-          # Check for dead columns in YAML for this table
-          if table_registered
+          # Check for dead columns in YAML or model DSL for this table
+          if @registry.table_registered?(table_name)
             @registry.table_columns(table_name).each_key do |reg_col|
               unless db_col_names.include?(reg_col)
                 dead_columns << "#{table_name}.#{reg_col}"
@@ -137,10 +143,57 @@ module MechaEncrypt
             end
           end
 
+          if model_klass && model_klass.respond_to?(:own_mecha_unencrypted_attributes)
+            model_klass.own_mecha_unencrypted_attributes.each_key do |dsl_col|
+              unless db_col_names.include?(dsl_col)
+                dead_columns << "#{table_name}.#{dsl_col}"
+              end
+            end
+          end
+
           col_audits = db_cols.map do |col|
             col_name = col.name
             actual_enc, actual_det = inspect_model_encryption(model_klass, col_name)
-            entry = @registry.column_entry(table_name, col_name)
+            yaml_entry = @registry.column_entry(table_name, col_name)
+            has_model_unencrypted = model_unencrypted.key?(col_name)
+
+            if yaml_entry.nil? && actual_enc && has_model_unencrypted
+              msg = "#{table_name}.#{col_name} is encrypted on #{model_klass.name} (`encrypts :#{col_name}`), but also declared in `unencrypted_attributes`"
+              undeclared_encrypted_in_model << msg
+              next ColumnAudit.new(
+                table: table_name,
+                column: col_name,
+                sql_type: col.sql_type,
+                model: model_klass&.name,
+                status: :violation,
+                encrypted: true,
+                deterministic: actual_det,
+                comment: model_unencrypted[col_name],
+                violation_message: msg
+              )
+            end
+
+            entry = if yaml_entry
+              yaml_entry
+            elsif actual_enc
+              {
+                table: table_name,
+                column: col_name,
+                encrypted: true,
+                deterministic: actual_det,
+                comment: "Declared via ActiveRecord::Encryption on #{model_klass.name}"
+              }
+            elsif has_model_unencrypted
+              {
+                table: table_name,
+                column: col_name,
+                encrypted: false,
+                deterministic: false,
+                comment: model_unencrypted[col_name]
+              }
+            else
+              nil
+            end
 
             if entry.nil?
               unmapped_columns << "#{table_name}.#{col_name}"

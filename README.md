@@ -56,6 +56,27 @@ tables:
       comment: "OAuth access token encrypted with non-deterministic IV"
 ```
 
+#### Model-Level DSL & Hybrid Mode (Optional)
+
+Instead of duplicating every column in `config/mecha_encrypt.yml`, models can declare their unencrypted column justifications directly alongside Rails' native `encrypts` macro via `MechaEncrypt::Model` (automatically included in `ActiveRecord::Base` via Railtie):
+
+```ruby
+class EmailAccount < ApplicationRecord
+  include MechaEncrypt::Model
+
+  encrypts :email_address, deterministic: true
+  encrypts :oauth_token
+
+  unencrypted_attributes :id, :created_at, :updated_at,
+                         reason: "Primary key UUID identifier and standard Rails timestamps"
+end
+```
+
+When auditing a table backed by an `ApplicationRecord` model:
+- Attributes declared with `encrypts :attr` (and `deterministic: true`) on the model are automatically recognized without requiring duplicate YAML entries.
+- Unencrypted columns declared with `unencrypted_attributes ..., reason: "..."` are validated using the same minimum-length and anti-placeholder rules as YAML `comment:` entries.
+- `config/mecha_encrypt.yml` can be used alone, in hybrid mode (e.g. for `ignored_tables` or model-less tables), or alongside model declarations.
+
 ### 2. Configure the Initializer
 
 Create `config/initializers/mecha_encrypt.rb`:
